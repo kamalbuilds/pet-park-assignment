@@ -1,102 +1,106 @@
 //SPDX-License-Identifier: MIT
 pragma solidity ^0.8.13;
 
-import {Ownable} from "openzeppelin-contracts/access/Ownable.sol";
+contract PetPark {
 
-contract PetPark is Ownable {
-    enum AnimalType {
-        Fish,
-        Cat,
-        Dog,
-        Rabbit,
-        Parrot
+  address public owner;
+
+  enum AnimalType {
+    None,
+    Fish,
+    Cat,
+    Dog,
+    Rabbit,
+    Parrot
+  }
+
+  enum Gender {
+    None,
+    Male,
+    Female
+  }
+
+  struct Borrower {
+    uint age;
+    Gender gender;
+    AnimalType animalType;
+  }
+
+  mapping(AnimalType => uint) public animalCounts;
+
+  mapping(address => Borrower) public addrToBorrower;
+
+  event Added(AnimalType animalType, uint animalCount);
+
+  event Borrowed(AnimalType animalType);
+
+  event Returned(AnimalType animalType);
+
+  constructor() {
+      owner = msg.sender;
+   }
+
+  modifier onlyOwner {
+      require(msg.sender == owner, "Not owner");
+      _;
+   }
+
+  function add(AnimalType animalType, uint animalCount) public onlyOwner {
+    require(animalType != AnimalType.None, "Invalid animal");
+
+     animalCounts[animalType] += animalCount;
+
+     emit Added(animalType, animalCount);
+  }
+
+function borrow(uint age, Gender gender, AnimalType animalType) public {
+    require(animalType != AnimalType.None, "Invalid animal type");
+    
+    require(age > 0, "Invalid age");
+
+    require(animalCounts[animalType] > 0, "Selected animal not available");
+
+    if (gender == Gender.Male) {
+      require (animalType == AnimalType.Dog || animalType == AnimalType.Fish, "Invalid animal for men");
     }
 
-    enum Gender {
-        Male,
-        Female
+    if (gender == Gender.Female && age < 40) {
+      require (animalType != AnimalType.Cat, "Invalid animal for women under 40");
     }
 
-    /// @notice mapping between sheltered animals and number of animals
-    mapping(AnimalType => uint256) public animalCounts;
-    /// @notice mapping between borrower and their borrowed animal (set to None if did not borrow before)
-    mapping(address => AnimalType) public borrowedAnimal;
-    /// @notice mapping between borrower and their details
-    mapping(address => BorrowerDetails) public borrowerDetails;
+    Borrower storage borrower = addrToBorrower[msg.sender];
 
-    struct BorrowerDetails {
-        bool isRegistred;
-        Gender gender;
-        uint256 age;
+    if (borrower.age != 0) {
+      require(borrower.age == age, "Invalid Age");
     }
 
-    event Added(AnimalType indexed animalType, uint256 count);
-    event Borrowed(AnimalType indexed animalType);
-    event Returned(AnimalType indexed animalType);
-
-    constructor() Ownable() {}
-
-    modifier checkBorrowCriteria(uint256 _age, Gender _gender, AnimalType _animalType) {
-        require(borrowedAnimal[msg.sender] == AnimalType.None, "Already adopted a pet");
-        require(_age > 0, "Age can not be zero");
-
-        if (_gender == Gender.Male) {
-            require((_animalType == AnimalType.Dog) || (_animalType == AnimalType.Fish), "Invalid animal for men");
-        } else {
-            if (_age < 40) {
-                require(_animalType != AnimalType.Cat, "Invalid animal for women under 40");
-            }
-        }
-
-        _;
+    if (borrower.gender != Gender.None) {
+      require(borrower.gender == gender, "Invalid Gender");
     }
 
-    modifier checkBorrowerDetails(address _borrower, uint256 _age, Gender _gender) {
-        BorrowerDetails memory details = borrowerDetails[_borrower];
+    require(borrower.animalType == AnimalType.None, "Already adopted a pet");
 
-        if (details.isRegistered) {
-            require(_age == details.age, "Invalid Age");
-            require(_gender == details.gender, "Invalid Gender");
+    animalCounts[animalType] = animalCounts[animalType] - 1;
 
-            AnimalType borrowedAnimalType = borrowedAnimal[_borrower];
-            require(borrowedAnimalType == AnimalType.None, "You have already borrowed an animal. Please return it before borrowing again.");
-        }
+    borrower.age = age;
+    borrower.gender = gender;
+    borrower.animalType = animalType;
 
-        _;
-    }
+    addrToBorrower[msg.sender] = borrower;
 
-    //// @notice onlyOwner would be able to call this function
-    function add(AnimalType _animalType, uint256 _count) external onlyOwner {
-        require(_animalType != AnimalType.None, "Invalid animal");
+    emit Borrowed(animalType);
+  }
 
-        animalCounts[_animalType] += _count;
 
-        emit Added(_animalType, _count);
-    }
+  function giveBackAnimal() public {
+    Borrower storage borrower = addrToBorrower[msg.sender];
 
-    function borrow(uint256 _age, Gender _gender, AnimalType _animalType)
-        external
-        checkBorrowerDetails(msg.sender, _age, _gender)
-        checkBorrowCriteria(_age, _gender, _animalType)
-    {
-        require(animalCounts[_animalType] > 0, "Selected animal not available");
+    require(borrower.animalType != AnimalType.None, "No borrowed pets");
 
-        animalCounts[_animalType] -= 1;
-        borrowedAnimal[msg.sender] = _animalType;
+    animalCounts[borrower.animalType] += 1;
 
-        borrowerDetails[msg.sender] = BorrowerDetails({isRegistred: true, gender: _gender, age: _age});
+    borrower.animalType = AnimalType.None;
 
-        emit Borrowed(_animalType);
-    }
-
-    function giveBackAnimal() external {
-        AnimalType borrowedAnimalType = borrowedAnimal[msg.sender];
-
-        require(borrowedAnimalType != AnimalType.None, "No borrowed pets");
-
-        borrowedAnimal[msg.sender] = AnimalType.None;
-        animalCounts[borrowedAnimalType] += 1;
-
-        emit Returned(borrowedAnimalType);
-    }
+    emit Returned(borrower.animalType);
+  }
 }
